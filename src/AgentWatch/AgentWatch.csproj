@@ -9,6 +9,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>AgentWatch</AssemblyName>
     <RootNamespace>AgentWatch</RootNamespace>
+    <Version>0.1.0</Version>
     <ApplicationIcon>AgentWatch.ico</ApplicationIcon>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <TieredPGO>false</TieredPGO>
