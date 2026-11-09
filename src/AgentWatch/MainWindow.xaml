@@ -1,0 +1,233 @@
+<Window x:Class="AgentWatch.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:AgentWatch"
+        Title="AgentWatch" Icon="pack://application:,,,/AgentWatch.ico" Width="760" Height="820" MinWidth="460" MinHeight="300"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
+        FontFamily="Segoe UI" FontSize="13">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolVis"/>
+
+        <DataTemplate x:Key="RunningTemplate" DataType="{x:Type local:TaskVm}">
+            <Border Background="{Binding SessionTint}" BorderBrush="{Binding SessionAccent}" BorderThickness="3,0,0,0"
+                    CornerRadius="6" Padding="12,10" Margin="{Binding CardMargin}">
+                <StackPanel>
+                    <DockPanel LastChildFill="True">
+                        <StackPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
+                            <TextBlock Text="{Binding ElapsedText}" FontFamily="{StaticResource MonoFont}" FontSize="22"
+                                       FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                            <TextBlock Text="{Binding StartedText}" FontSize="10" Foreground="{StaticResource SubTextBrush}" HorizontalAlignment="Right"/>
+                        </StackPanel>
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Border Style="{StaticResource Badge}" Background="{Binding SourceBrush}">
+                                    <TextBlock Text="{Binding SourceLabel}" FontSize="9" FontWeight="Bold" Foreground="White"/>
+                                </Border>
+                                <TextBlock Text="{Binding Header}" Foreground="{StaticResource SubTextBrush}" FontSize="11"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding Kind}" Foreground="{StaticResource SubTextBrush}" FontSize="10" FontStyle="Italic"
+                                           VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding Description}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,5,10,0"/>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <TextBlock Text="{Binding CommandShort}" ToolTip="{Binding Command}" FontFamily="{StaticResource MonoFont}" FontSize="11"
+                               Foreground="{StaticResource SubTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/>
+
+                    <ProgressBar Height="6" Margin="0,10,0,4" Minimum="0" Maximum="100" BorderThickness="0"
+                                 Value="{Binding Progress, Mode=OneWay}" IsIndeterminate="{Binding IsIndeterminate, Mode=OneWay}"
+                                 Foreground="{Binding ProgressBrush}" Background="{StaticResource TrackBrush}"/>
+
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Button Style="{StaticResource LinkButton}" Content="Output" Click="OpenOutput_Click"
+                                    Visibility="{Binding HasOutputFile, Converter={StaticResource BoolVis}}" ToolTip="Open the live output file in Notepad"/>
+                            <Button Style="{StaticResource LinkButton}" Content="Folder" Click="OpenFolder_Click"
+                                    Visibility="{Binding HasProject, Converter={StaticResource BoolVis}}"/>
+                            <Button Style="{StaticResource LinkButton}" Content="Copy cmd" Click="CopyCommand_Click"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding ProgressText}" FontSize="11" Foreground="{StaticResource SubTextBrush}" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+
+                    <Border Background="#1F2124" CornerRadius="3" Padding="6,3" Margin="0,6,0,0"
+                            Visibility="{Binding HasLastLine, Converter={StaticResource BoolVis}}">
+                        <TextBlock Text="{Binding LastLine}" FontFamily="{StaticResource MonoFont}" FontSize="11"
+                                   Foreground="#B9C0C8" TextTrimming="CharacterEllipsis" ToolTip="{Binding LastLine}"/>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <!-- Session header ("foreground lane"): what the agent itself is doing; background jobs are listed under it. -->
+        <DataTemplate x:Key="ActivityTemplate" DataType="{x:Type local:SessionVm}">
+            <Border Background="{Binding SessionTint}" BorderBrush="{Binding SessionAccent}" BorderThickness="3,0,0,0"
+                    CornerRadius="6" Padding="12,10" Margin="0,4,0,6" Opacity="{Binding CardOpacity}">
+                <StackPanel>
+                    <!-- Agent is blocked on the user -->
+                    <Border Background="#4A2230" BorderBrush="#F2617A" BorderThickness="1" CornerRadius="4" Padding="10,6" Margin="0,0,0,8"
+                            Visibility="{Binding NeedsInput, Converter={StaticResource BoolVis}}">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding NeedsInputFor}" FontFamily="{StaticResource MonoFont}"
+                                       Foreground="#FFD0D8" FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            <TextBlock Text="✋" FontSize="14" Foreground="#F2617A" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="{Binding NeedsInputText}" Foreground="#FFD0D8" FontWeight="SemiBold" FontSize="13"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding NeedsInputText}"/>
+                        </DockPanel>
+                    </Border>
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
+                            <TextBlock Text="{Binding LaneTimerText}" FontFamily="{StaticResource MonoFont}" FontSize="22"
+                                       FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                            <TextBlock Text="{Binding LaneTimerLabel}" FontSize="10" Foreground="{StaticResource SubTextBrush}" HorizontalAlignment="Right"/>
+                        </StackPanel>
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Border Style="{StaticResource Badge}" Background="{Binding SourceBrush}">
+                                    <TextBlock Text="{Binding SourceLabel}" FontSize="9" FontWeight="Bold" Foreground="White"/>
+                                </Border>
+                                <TextBlock Foreground="{StaticResource SubTextBrush}" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                    <Run Text="{Binding Name, Mode=OneWay}"/><Run Text="  ·  "/><Run Text="{Binding Project, Mode=OneWay}"/>
+                                </TextBlock>
+                                <TextBlock Text="{Binding LaneLabel}" Foreground="{StaticResource SubTextBrush}" FontSize="10" FontStyle="Italic"
+                                           VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            </StackPanel>
+                            <TextBlock FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,5,10,0">
+                                <Run Text="{Binding Title, Mode=OneWay}"/>
+                                <Run Text="{Binding TitleFor, Mode=OneWay}" FontWeight="Normal" FontSize="11" Foreground="{StaticResource SubTextBrush}"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <!-- Busy without a command: thin activity bar -->
+                    <ProgressBar Height="3" Margin="0,8,0,4" IsIndeterminate="True" BorderThickness="0"
+                                 Foreground="{Binding SessionAccent}" Background="{StaticResource TrackBrush}"
+                                 Visibility="{Binding ShowBusyBar, Converter={StaticResource BoolVis}}"/>
+
+                    <!-- Foreground command embedded in the lane -->
+                    <StackPanel Visibility="{Binding HasForeground, Converter={StaticResource BoolVis}}" Margin="0,4,0,0">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" FontFamily="{StaticResource MonoFont}" FontSize="12" Margin="10,0,0,0"
+                                       Text="{Binding Fg.ElapsedText, Mode=OneWay}"/>
+                            <TextBlock Text="{Binding Fg.CommandShort, Mode=OneWay}" ToolTip="{Binding Fg.Command, Mode=OneWay}"
+                                       FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{StaticResource SubTextBrush}"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </DockPanel>
+                        <ProgressBar Height="6" Margin="0,8,0,4" Minimum="0" Maximum="100" BorderThickness="0"
+                                     Value="{Binding Fg.Progress, Mode=OneWay}" IsIndeterminate="{Binding Fg.IsIndeterminate, Mode=OneWay}"
+                                     Foreground="{Binding Fg.ProgressBrush, Mode=OneWay}" Background="{StaticResource TrackBrush}"/>
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" DataContext="{Binding Fg}">
+                                <Button Style="{StaticResource LinkButton}" Content="Folder" Click="OpenFolder_Click"
+                                        Visibility="{Binding HasProject, Converter={StaticResource BoolVis}}"/>
+                                <Button Style="{StaticResource LinkButton}" Content="Copy cmd" Click="CopyCommand_Click"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding Fg.ProgressText, Mode=OneWay}" FontSize="11" Foreground="{StaticResource SubTextBrush}" TextTrimming="CharacterEllipsis"/>
+                        </DockPanel>
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding StepsText}" FontSize="11" Foreground="{StaticResource SubTextBrush}" Margin="0,4,0,0"/>
+                    <ItemsControl ItemsSource="{Binding RecentSteps}" Margin="0,4,0,0"
+                                  Visibility="{Binding HasSteps, Converter={StaticResource BoolVis}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontFamily="{StaticResource MonoFont}" FontSize="11"
+                                           Foreground="#B9C0C8" TextTrimming="CharacterEllipsis"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="SessionTemplate" DataType="{x:Type local:SessionVm}">
+            <Grid Margin="2,3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="24"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Rectangle Width="3" Height="16" RadiusX="1.5" RadiusY="1.5" Fill="{Binding SessionAccent}" Margin="0,0,6,0"/>
+                    <Ellipse Width="8" Height="8" Fill="{Binding DotBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Border Grid.Column="1" Style="{StaticResource Badge}" Background="{Binding SourceBrush}">
+                    <TextBlock Text="{Binding SourceLabel}" FontSize="9" FontWeight="Bold" Foreground="White"/>
+                </Border>
+                <TextBlock Grid.Column="2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip="{Binding ProjectPath}">
+                    <Run Text="{Binding Name, Mode=OneWay}"/>
+                    <Run Text="{Binding Project, Mode=OneWay}" Foreground="{StaticResource SubTextBrush}" FontSize="11"/>
+                </TextBlock>
+                <TextBlock Grid.Column="3" Text="{Binding StateText}" Foreground="{StaticResource SubTextBrush}" FontSize="11"
+                           VerticalAlignment="Center" Margin="10,0,0,0"/>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="RecentTemplate" DataType="{x:Type local:TaskVm}">
+            <Border BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,0,0,1" Padding="2,6">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding StatusGlyph}" Foreground="{Binding StatusBrush}" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <Border Grid.Column="1" Style="{StaticResource Badge}" Background="{Binding SourceBrush}">
+                        <TextBlock Text="{Binding SourceLabel}" FontSize="9" FontWeight="Bold" Foreground="White"/>
+                    </Border>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="{Binding Description}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Command}"/>
+                        <TextBlock Text="{Binding Header}" FontSize="10" Foreground="{StaticResource SubTextBrush}" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="3" Margin="10,0,0,0">
+                        <TextBlock Text="{Binding FinishedText}" FontSize="11" HorizontalAlignment="Right" FontFamily="{StaticResource MonoFont}"/>
+                        <TextBlock Text="{Binding StatusText}" FontSize="10" Foreground="{Binding StatusBrush}" HorizontalAlignment="Right"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Background="#222428" Padding="14,10">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <CheckBox x:Name="ShortBox" Content="Short commands" ToolTip="Also list commands that finished in under 5 seconds"/>
+                    <CheckBox x:Name="NotifyBox" Content="Notify"/>
+                    <CheckBox x:Name="TopBox" Content="On top"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="AgentWatch" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="SummaryText" Foreground="{StaticResource SubTextBrush}" FontSize="12" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <TextBlock x:Name="ErrorText" DockPanel.Dock="Bottom" Foreground="#E58A5C" FontSize="11" Margin="14,4" TextTrimming="CharacterEllipsis" Visibility="Collapsed"/>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,0,14,10">
+            <StackPanel>
+                <TextBlock x:Name="RunningTitle" Text="RUNNING NOW" Style="{StaticResource SectionTitle}"/>
+                <ItemsControl x:Name="RunningList">
+                    <ItemsControl.ItemTemplateSelector>
+                        <local:RunningTemplateSelector ActivityTemplate="{StaticResource ActivityTemplate}"
+                                                       TaskTemplate="{StaticResource RunningTemplate}"/>
+                    </ItemsControl.ItemTemplateSelector>
+                </ItemsControl>
+                <Border x:Name="NothingRunning" Background="{StaticResource CardBrush}" CornerRadius="6" Padding="12,14">
+                    <TextBlock Text="Nothing running right now." Foreground="{StaticResource SubTextBrush}" HorizontalAlignment="Center"/>
+                </Border>
+
+                <TextBlock x:Name="SessionsTitle" Text="SESSIONS" Style="{StaticResource SectionTitle}"/>
+                <ItemsControl x:Name="SessionList" ItemTemplate="{StaticResource SessionTemplate}"/>
+
+                <TextBlock x:Name="RecentTitle" Text="RECENTLY FINISHED" Style="{StaticResource SectionTitle}" Cursor="Hand"
+                           ToolTip="Click to show or hide" MouseLeftButtonUp="RecentTitle_Click"/>
+                <ItemsControl x:Name="RecentList" ItemTemplate="{StaticResource RecentTemplate}"/>
+                <Button x:Name="RecentMoreButton" Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Margin="2,6,0,0"
+                        Click="RecentMore_Click"/>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>
