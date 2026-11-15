@@ -27,6 +27,16 @@ reading or editing a file, running a command, using a subagent or MCP tool), how
 and its last few steps. Below that card are the session's running commands with timers and progress.
 A session that is idle but still has background jobs shows as **waiting** in the Sessions list.
 
+Each running command also shows a **Running process** block: the programs actually executing under the
+agent's shell right now (e.g. `dotnet build …` inside a long chained command), each with its CPU use, age and pid,
+and which of its child processes are busy. Hover a line for the full command line and process chain.
+- Git Bash pipelines and `( … &)` subshells are followed through Git Bash's own process table, since they lose
+  their Windows parent link.
+- **DETACHED**: a program the command started whose launcher has exited.
+- **RELATED**: an already-running program the command drives, when the command names it and it works in the same
+  project folder (e.g. the Unity editor behind `unity command …`).
+- While the shell itself has no child process, the block says what it ran last and when that ended.
+
 When an agent is blocked on you (a permission prompt, a question, plan approval, a dialog, or a Codex approval
 request), its card gets a red **✋ Needs your input** banner with how long it has waited, its Sessions dot turns red,
 the window title and summary show ✋, and a tray notification appears.
@@ -43,6 +53,7 @@ a background task, or any task longer than 15 s, finishes.
 | `~/.codex/state_5.sqlite` | Codex threads (name, cwd, rollout file) |
 | `~/.codex/sessions/**/rollout-*.jsonl` | In-flight Codex commands while a thread is active |
 | `~/.codex/thread_history_1.sqlite` | Finished Codex commands, busy turns |
+| Windows process list (+ Git Bash's `ps`) | Programs running under each agent's shell, their command lines and CPU use |
 
 ## Progress estimates
 
@@ -58,7 +69,7 @@ a background task, or any task longer than 15 s, finishes.
 
 ## Privacy
 
-AgentWatch only reads the local files listed above. It never writes to them, and it makes no network
+AgentWatch only reads the local files and process information listed above. It never writes to them, and it makes no network
 connections. Everything it stores stays in `%LOCALAPPDATA%\AgentWatch`.
 
 ## License

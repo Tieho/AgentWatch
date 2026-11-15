@@ -200,15 +200,55 @@ public sealed class TaskVm : Observable
     }
     public string FinishedText => S.EndedAt is { } e ? $"{Fmt.Duration(Elapsed)}  ·  {Fmt.Ago(e)}" : "";
 
-    public void Update(TaskSnapshot s, OutputInfo? output, Estimate? estimate)
+    // ---- live processes under the task's shell ----
+    private ProcessDetail? _procs;
+    private const int MaxProcLines = 4;
+    public bool HasProcesses => IsRunning && _procs is { Procs.Count: > 0 };
+    /// <summary>One entry per program doing work, e.g. "dotnet build -c Release  ·  cpu 34% · 12s · pid 4242".</summary>
+    public IReadOnlyList<ProcLineVm> ProcessLines
+    {
+        get
+        {
+            if (!HasProcesses) return Array.Empty<ProcLineVm>();
+            var now = DateTimeOffset.Now;
+            var ordered = _procs!.Procs.Where(p => !p.Outside).OrderByDescending(p => p.Started) // newest: usually the step in progress
+                .Concat(_procs.Procs.Where(p => p.Outside).OrderByDescending(p => p.Cpu ?? 0));
+            var lines = ordered.Take(MaxProcLines).Select(p =>
+            {
+                string text = p.IsShell ? $"{p.Name}  (no child process: builtin, sleep, loop or between steps)" : (p.Name + " " + p.Args).TrimEnd();
+                string? sub = p.Busy;
+                if (p.IsShell && _procs.LastRan is { } last)
+                    sub = "last ran: " + last + (_procs.LastEnded is { } e ? $"  ·  ended {Fmt.Duration(now - e)} ago" : "");
+                string cpu = p.Cpu is { } c ? $"cpu {c:0}% · " : "";
+                string tip = $"{p.Chain}\npid {p.Pid}, started {p.Started.ToLocalTime():HH:mm:ss}" +
+                             (p.Busy is { } b ? "\n" + b : "") + $"\n\n{p.CommandLine}";
+                return new ProcLineVm(text, sub ?? "", $"{cpu}{Fmt.Duration(now - p.Started)} · pid {p.Pid}", tip,
+                    p.Tag, p.Cpu is >= 5);
+            }).ToList();
+            int more = _procs.Procs.Count - lines.Count;
+            if (more > 0) lines.Add(new ProcLineVm($"+ {more} more", "", "", "", "", false));
+            return lines;
+        }
+    }
+
+    public void Update(TaskSnapshot s, OutputInfo? output, Estimate? estimate, ProcessDetail? procs = null)
     {
         S = s;
         _output = output;
         _estimate = estimate;
+        _procs = procs;
         RaiseAll();
     }
 
     public void Tick() => RaiseAll();
+}
+
+public sealed record ProcLineVm(string Text, string Sub, string Meta, string Tip, string Tag, bool Busy)
+{
+    public bool HasTip => Tip.Length > 0;
+    public bool HasSub => Sub.Length > 0;
+    public bool HasTag => Tag.Length > 0;
+    public Brush MetaBrush => Busy ? Palette.Ok : Palette.Neutral;
 }
 
 public sealed class SessionVm : Observable

@@ -10,6 +10,7 @@ public sealed class MonitorService : IDisposable
 {
     private readonly ClaudeSource _claude = new();
     private readonly CodexSource _codex = new();
+    private readonly ProcessMatcher _procs = new();
     private readonly Timer _timer;
     private int _running;
     private bool _first = true;
@@ -79,8 +80,12 @@ public sealed class MonitorService : IDisposable
                 if (Estimator.EstimateFor(t.Command, t.Description) is { } e) estimates[t.Key] = e;
             }
 
+            Dictionary<string, ProcessDetail> procs;
+            try { procs = _procs.Match(tasks, sessions); }
+            catch (Exception e) { procs = new(); Error?.Invoke("Processes: " + e.Message); }
+
             Estimator.Save();
-            Updated?.Invoke(new MonitorSnapshot(tasks, sessions, outputs, estimates));
+            Updated?.Invoke(new MonitorSnapshot(tasks, sessions, outputs, estimates, procs));
         }
         catch (Exception e)
         {

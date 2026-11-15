@@ -29,6 +29,14 @@ public static class DiagnosticDump
                 last.Estimates.TryGetValue(t.Key, out var est);
                 last.Outputs.TryGetValue(t.Key, out var o);
                 sb.AppendLine($"  {t.Source} {t.SessionName} | {t.Description} | started {t.StartedAt.ToLocalTime():HH:mm:ss} bg={t.IsBackground} est={est?.Seconds:0}s/{est?.Samples} pct={o?.Percent} last={o?.LastLine}");
+                if (last.Processes.TryGetValue(t.Key, out var pd))
+                {
+                    foreach (var l in pd.Procs)
+                        sb.AppendLine($"      proc pid={l.Pid} cpu={l.Cpu:0.0} tag={l.Tag} shell={l.IsShell} [{l.Chain}] {l.Name} {(l.Args.Length > 160 ? l.Args[..160] + "…" : l.Args)} | {l.Busy}");
+                    if (pd.LastRan != null) sb.AppendLine($"      last ran: {pd.LastRan} ended {pd.LastEnded:HH:mm:ss}");
+                }
+                else
+                    sb.AppendLine("      proc (no matching process)");
             }
             sb.AppendLine("FINISHED (last 12h)");
             foreach (var t in last.Tasks.Where(t => t.Status != AgentTaskStatus.Running).OrderByDescending(t => t.EndedAt).Take(40))

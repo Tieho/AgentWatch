@@ -8,6 +8,35 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolVis"/>
 
+        <!-- Processes actually executing under a task's shell -->
+        <DataTemplate x:Key="ProcLineTemplate" DataType="{x:Type local:ProcLineVm}">
+            <StackPanel ToolTipService.ShowDuration="60000" Margin="0,1">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasTip}" Value="True">
+                                <Setter Property="ToolTip" Value="{Binding Tip}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding Meta}" FontFamily="{StaticResource MonoFont}" FontSize="10"
+                               Foreground="{Binding MetaBrush}" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="▸" Foreground="{StaticResource SubTextBrush}" FontSize="10" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                    <Border DockPanel.Dock="Left" Background="#3A3F47" CornerRadius="2" Padding="4,0" Margin="0,0,6,0" VerticalAlignment="Center"
+                            Visibility="{Binding HasTag, Converter={StaticResource BoolVis}}">
+                        <TextBlock Text="{Binding Tag}" FontSize="8" FontWeight="Bold" Foreground="#C8CED6"/>
+                    </Border>
+                    <TextBlock Text="{Binding Text}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="#D6DCE2"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                </DockPanel>
+                <TextBlock Text="{Binding Sub}" FontFamily="{StaticResource MonoFont}" FontSize="10" Foreground="{StaticResource SubTextBrush}"
+                           Margin="14,0,0,0" TextTrimming="CharacterEllipsis"
+                           Visibility="{Binding HasSub, Converter={StaticResource BoolVis}}"/>
+            </StackPanel>
+        </DataTemplate>
+
         <DataTemplate x:Key="RunningTemplate" DataType="{x:Type local:TaskVm}">
             <Border Background="{Binding SessionTint}" BorderBrush="{Binding SessionAccent}" BorderThickness="3,0,0,0"
                     CornerRadius="6" Padding="12,10" Margin="{Binding CardMargin}">
@@ -49,6 +78,14 @@
                         </StackPanel>
                         <TextBlock Text="{Binding ProgressText}" FontSize="11" Foreground="{StaticResource SubTextBrush}" TextTrimming="CharacterEllipsis"/>
                     </DockPanel>
+
+                    <Border Background="#1A1C1F" CornerRadius="3" Padding="6,3" Margin="0,6,0,0"
+                            Visibility="{Binding HasProcesses, Mode=OneWay, Converter={StaticResource BoolVis}}">
+                        <StackPanel>
+                            <TextBlock Text="RUNNING PROCESS" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource SubTextBrush}" Margin="0,0,0,2"/>
+                            <ItemsControl ItemsSource="{Binding ProcessLines, Mode=OneWay}" ItemTemplate="{StaticResource ProcLineTemplate}"/>
+                        </StackPanel>
+                    </Border>
 
                     <Border Background="#1F2124" CornerRadius="3" Padding="6,3" Margin="0,6,0,0"
                             Visibility="{Binding HasLastLine, Converter={StaticResource BoolVis}}">
@@ -124,6 +161,13 @@
                             </StackPanel>
                             <TextBlock Text="{Binding Fg.ProgressText, Mode=OneWay}" FontSize="11" Foreground="{StaticResource SubTextBrush}" TextTrimming="CharacterEllipsis"/>
                         </DockPanel>
+                    <Border Background="#1A1C1F" CornerRadius="3" Padding="6,3" Margin="0,6,0,0"
+                                Visibility="{Binding Fg.HasProcesses, Mode=OneWay, Converter={StaticResource BoolVis}}">
+                            <StackPanel>
+                                <TextBlock Text="RUNNING PROCESS" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource SubTextBrush}" Margin="0,0,0,2"/>
+                                <ItemsControl ItemsSource="{Binding Fg.ProcessLines, Mode=OneWay}" ItemTemplate="{StaticResource ProcLineTemplate}"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
 
                     <TextBlock Text="{Binding StepsText}" FontSize="11" Foreground="{StaticResource SubTextBrush}" Margin="0,4,0,0"/>

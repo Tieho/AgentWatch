@@ -67,7 +67,8 @@ public sealed record SessionSnapshot(
     DateTimeOffset? OldestTaskStart = null,
     SessionActivity? Activity = null,
     string? WaitingFor = null,
-    DateTimeOffset? WaitingSince = null);
+    DateTimeOffset? WaitingSince = null,
+    int? Pid = null);
 
 public sealed record ActivityStep(DateTimeOffset At, string Text);
 
@@ -79,6 +80,20 @@ public sealed record SessionActivity(
     int TurnSteps,
     IReadOnlyList<ActivityStep> Steps);
 
+/// <summary>A process doing work under a task's shell (a leaf of its process tree).</summary>
+public sealed record RunningProcess(int Pid, string Name, string Args, string CommandLine, DateTimeOffset Started, string Chain,
+    bool IsShell, double? Cpu, string? Busy, string Tag)
+{
+    /// <summary>Not under the task's shell: DETACHED (its launcher exited) or RELATED (already running, used by the command).</summary>
+    public bool Outside => Tag.Length > 0;
+}
+
+/// <summary>
+/// What a running task is executing right now: the programs under its shell, and programs it detached.
+/// While the shell has no child, LastRan says what it ran last and LastEnded when that went away.
+/// </summary>
+public sealed record ProcessDetail(int ShellPid, IReadOnlyList<RunningProcess> Procs, string? LastRan, DateTimeOffset? LastEnded);
+
 public sealed record OutputInfo(string? LastLine, double? Percent);
 
 public sealed record Estimate(double Seconds, int Samples);
@@ -87,4 +102,5 @@ public sealed record MonitorSnapshot(
     IReadOnlyList<TaskSnapshot> Tasks,
     IReadOnlyList<SessionSnapshot> Sessions,
     IReadOnlyDictionary<string, OutputInfo> Outputs,
-    IReadOnlyDictionary<string, Estimate> Estimates);
+    IReadOnlyDictionary<string, Estimate> Estimates,
+    IReadOnlyDictionary<string, ProcessDetail> Processes);

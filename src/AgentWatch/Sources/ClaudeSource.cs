@@ -16,6 +16,7 @@ public sealed class ClaudeSource
     private sealed class SessionState
     {
         public required string SessionId;
+        public int Pid;
         public string Name = "";
         public string Cwd = "";
         public bool Alive;
@@ -48,6 +49,7 @@ public sealed class ClaudeSource
                 if (!_sessions.TryGetValue(sf.SessionId, out var st))
                     _sessions[sf.SessionId] = st = new SessionState { SessionId = sf.SessionId };
                 st.Alive = true;
+                st.Pid = sf.Pid;
                 st.DiedAt = DateTimeOffset.MaxValue;
                 st.Name = string.IsNullOrWhiteSpace(sf.Name) ? System.IO.Path.GetFileName(sf.Cwd.TrimEnd('\\', '/')) : sf.Name;
                 st.Cwd = sf.Cwd;
@@ -111,7 +113,7 @@ public sealed class ClaudeSource
                     }
                 }
                 sessions.Add(new SessionSnapshot("claude:" + st.SessionId, AgentSource.Claude, st.Name, st.Cwd, st.Busy, st.StatusSince,
-                    Activity: CurrentActivity(st, now), WaitingFor: waiting, WaitingSince: waitingSince));
+                    Activity: CurrentActivity(st, now), WaitingFor: waiting, WaitingSince: waitingSince, Pid: st.Pid));
             }
 
             if (!st.Alive && now - st.DiedAt > TimeSpan.FromHours(12))

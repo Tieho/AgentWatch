@@ -89,11 +89,12 @@ public partial class MainWindow : Window
         {
             snap.Outputs.TryGetValue(t.Key, out var o);
             snap.Estimates.TryGetValue(t.Key, out var e);
-            if (_taskVms.TryGetValue(t.Key, out var vm)) vm.Update(t, o, e);
+            snap.Processes.TryGetValue(t.Key, out var p);
+            if (_taskVms.TryGetValue(t.Key, out var vm)) vm.Update(t, o, e, p);
             else
             {
                 vm = new TaskVm(t);
-                vm.Update(t, o, e);
+                vm.Update(t, o, e, p);
                 _taskVms[t.Key] = vm;
             }
         }
