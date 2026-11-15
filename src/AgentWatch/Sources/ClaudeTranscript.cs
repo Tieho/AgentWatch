@@ -20,6 +20,8 @@ public sealed partial class ClaudeTranscript
     /// <summary>Tool calls of the current turn still waiting for their result (id → description), in call order.</summary>
     private readonly List<PendingTool> _pendingTools = new();
     private sealed record PendingTool(string Id, string Name, string Text, DateTimeOffset At);
+    /// <summary>When the latest tool result of the current turn arrived.</summary>
+    private DateTimeOffset _lastToolResultAt = DateTimeOffset.MinValue;
 
     /// <summary>Tools that only finish when the user responds.</summary>
     private static readonly Dictionary<string, string> UserInputTools = new()
@@ -40,8 +42,16 @@ public sealed partial class ClaudeTranscript
         foreach (var p in _pendingTools)
         {
             if (UserInputTools.TryGetValue(p.Name, out var why)) return (why, p.At);
-            if (InstantTools.Contains(p.Name) && now - p.At > TimeSpan.FromSeconds(10))
-                return ("approve: " + p.Text, p.At);
+            if (!InstantTools.Contains(p.Name))
+            {
+                // Claude Code runs a message's tool calls in order (only read-only ones in parallel), so
+                // calls after a still-running command or subagent are queued behind it, not awaiting approval.
+                return null;
+            }
+            // An instant call can only start once the calls before it have returned.
+            var since = p.At > _lastToolResultAt ? p.At : _lastToolResultAt;
+            if (now - since > TimeSpan.FromSeconds(10))
+                return ("approve: " + p.Text, since);
         }
         return null;
     }
@@ -187,7 +197,8 @@ public sealed partial class ClaudeTranscript
         {
             if (Str(block, "type") != "tool_result") continue;
             string? id = Str(block, "tool_use_id");
-            if (id != null) _pendingTools.RemoveAll(p => p.Id == id);
+            if (id != null && _pendingTools.RemoveAll(p => p.Id == id) > 0 && ts > _lastToolResultAt)
+                _lastToolResultAt = ts;
             if (id == null || !_byToolUse.TryGetValue(id, out var task)) continue;
             if (task.Status != AgentTaskStatus.Running) continue;
 
