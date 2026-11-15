@@ -4,7 +4,7 @@ A small Windows app (WPF, .NET 10) that shows what **Claude Code** and **OpenAI 
 every shell command and subagent, foreground or background, with a live timer, an estimated progress bar,
 and the latest output line.
 
-![AgentWatch showing Claude Code and Codex sessions with running commands, progress bars and an approval prompt](docs/screenshot.png)
+![AgentWatch showing Claude Code and Codex sessions with running commands, the processes they are running, progress bars and an approval prompt](docs/screenshot.png)
 
 ## Requirements
 
