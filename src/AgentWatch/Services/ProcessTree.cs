@@ -14,6 +14,10 @@ public sealed class ProcInfo(int pid, int parentPid, string exe, DateTimeOffset 
     public string? CommandLine { get; set; }
     /// <summary>Share of total machine CPU since the previous capture (Task Manager style); null on first sight.</summary>
     public double? Cpu { get; set; }
+    /// <summary>The exe's own description, as Task Manager shows it ("Unity Shader Compiler"); the exe name if it has none.</summary>
+    public string FriendlyName { get; set; } = "";
+    /// <summary>Titles of the process's visible top-level windows ("Opening project...", "Hold on...").</summary>
+    public List<string> Titles { get; } = new();
     public List<ProcInfo> Children { get; } = new();
     public (int, long) Id => (Pid, Created.UtcTicks);
 
@@ -42,6 +46,8 @@ public static class ProcessTree
 {
     private static readonly Dictionary<(int, long), string?> CmdCache = new();
     private static readonly Dictionary<(int, long), (long cpu, long at)> CpuPrev = new();
+    private static readonly Dictionary<(int, long), string> NameCache = new();
+    private static readonly Dictionary<string, string?> DescCache = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Processes that never do interesting work themselves.</summary>
     public static bool IsNoise(ProcInfo p) => Path.GetFileNameWithoutExtension(p.Exe).ToLowerInvariant() is
@@ -91,6 +97,8 @@ public static class ProcessTree
             live.Add(p.Id);
             if (!CmdCache.TryGetValue(p.Id, out var cmd)) CmdCache[p.Id] = cmd = ReadCommandLine(e.pid);
             p.CommandLine = cmd;
+            if (!NameCache.TryGetValue(p.Id, out var friendly)) NameCache[p.Id] = friendly = Friendly(e.pid, e.exe);
+            p.FriendlyName = friendly;
             if (CpuPrev.TryGetValue(p.Id, out var prev) && now > prev.at)
                 p.Cpu = Math.Clamp((cpu - prev.cpu) * 100.0 / ((now - prev.at) * (double)Environment.ProcessorCount), 0, 100);
             CpuPrev[p.Id] = (cpu, now);
@@ -133,7 +141,11 @@ public static class ProcessTree
             }
         }
 
+        foreach (var (pid, title) in WindowTitles())
+            if (forest.All.TryGetValue(pid, out var owner) && !owner.Titles.Contains(title)) owner.Titles.Add(title);
+
         foreach (var k in CmdCache.Keys.Where(k => !live.Contains(k)).ToList()) CmdCache.Remove(k);
+        foreach (var k in NameCache.Keys.Where(k => !live.Contains(k)).ToList()) NameCache.Remove(k);
         foreach (var k in CpuPrev.Keys.Where(k => !live.Contains(k)).ToList()) CpuPrev.Remove(k);
         return forest;
     }
@@ -153,6 +165,40 @@ public static class ProcessTree
             while (Process32NextW(snap, ref pe));
         }
         finally { CloseHandle(snap); }
+        return list;
+    }
+
+    private static string Friendly(int pid, string exe)
+    {
+        string fallback = exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? exe[..^4] : exe;
+        if (ImagePath(pid) is not { } path) return fallback;
+        if (!DescCache.TryGetValue(path, out var desc))
+        {
+            try { desc = System.Diagnostics.FileVersionInfo.GetVersionInfo(path).FileDescription?.Trim(); }
+            catch (Exception) { desc = null; }
+            DescCache[path] = desc;
+        }
+        return string.IsNullOrWhiteSpace(desc) ? fallback : desc;
+    }
+
+    /// <summary>(pid, title) of every visible, titled top-level window.</summary>
+    private static List<(int pid, string title)> WindowTitles()
+    {
+        var list = new List<(int, string)>();
+        EnumWindowsProc cb = (h, _) =>
+        {
+            if (!IsWindowVisible(h)) return true;
+            int len = GetWindowTextLengthW(h);
+            if (len <= 0) return true;
+            var sb = new System.Text.StringBuilder(len + 1);
+            GetWindowTextW(h, sb, sb.Capacity);
+            GetWindowThreadProcessId(h, out uint pid);
+            string t = sb.ToString().Trim();
+            if (t.Length > 0) list.Add(((int)pid, t));
+            return true;
+        };
+        EnumWindows(cb, IntPtr.Zero);
+        GC.KeepAlive(cb);
         return list;
     }
 
@@ -251,6 +297,17 @@ public static class ProcessTree
     private static extern bool GetProcessTimes(IntPtr h, out long creation, out long exit, out long kernel, out long user);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool QueryFullProcessImageNameW(IntPtr h, int flags, System.Text.StringBuilder name, ref int size);
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowTextLengthW(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowTextW(IntPtr h, System.Text.StringBuilder s, int max);
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("ntdll.dll")]
     private static extern int NtQueryInformationProcess(IntPtr h, int infoClass, IntPtr info, int length, out int returnLength);
 }

@@ -203,6 +203,7 @@ public sealed class TaskVm : Observable
     // ---- live processes under the task's shell ----
     private ProcessDetail? _procs;
     private const int MaxProcLines = 4;
+    private const int MaxChildRows = 6;
     public bool HasProcesses => IsRunning && _procs is { Procs.Count: > 0 };
     /// <summary>One entry per program doing work, e.g. "dotnet build -c Release  ·  cpu 34% · 12s · pid 4242".</summary>
     public IReadOnlyList<ProcLineVm> ProcessLines
@@ -215,18 +216,27 @@ public sealed class TaskVm : Observable
                 .Concat(_procs.Procs.Where(p => p.Outside).OrderByDescending(p => p.Cpu ?? 0));
             var lines = ordered.Take(MaxProcLines).Select(p =>
             {
-                string text = p.IsShell ? $"{p.Name}  (no child process: builtin, sleep, loop or between steps)" : (p.Name + " " + p.Args).TrimEnd();
-                string? sub = p.Busy;
+                string text = p.IsShell ? $"{p.Name}  (no child process: builtin, sleep, loop or between steps)"
+                    : p.Title != null ? $"{p.FriendlyName}  —  {p.Title}"
+                    : (p.Name + " " + p.Args).TrimEnd();
+                string sub = "";
                 if (p.IsShell && _procs.LastRan is { } last)
                     sub = "last ran: " + last + (_procs.LastEnded is { } e ? $"  ·  ended {Fmt.Duration(now - e)} ago" : "");
+                else if (p.Title != null)
+                    sub = (p.Name + " " + p.Args).TrimEnd();
                 string cpu = p.Cpu is { } c ? $"cpu {c:0}% · " : "";
-                string tip = $"{p.Chain}\npid {p.Pid}, started {p.Started.ToLocalTime():HH:mm:ss}" +
-                             (p.Busy is { } b ? "\n" + b : "") + $"\n\n{p.CommandLine}";
-                return new ProcLineVm(text, sub ?? "", $"{cpu}{Fmt.Duration(now - p.Started)} · pid {p.Pid}", tip,
-                    p.Tag, p.Cpu is >= 5);
+                string tip = $"{p.FriendlyName}\n{p.Chain}\npid {p.Pid}, started {p.Started.ToLocalTime():HH:mm:ss}\n\n{p.CommandLine}";
+                var kids = p.Children.Take(MaxChildRows).Select(g => new ProcChildVm(
+                    (g.Count > 1 ? $"{g.Name} ×{g.Count}" : g.Name) + (g.Title != null ? $"  —  {g.Title}" : ""),
+                    g.Cpu is { } gc ? $"{gc:0}%" : "", g.Cpu is >= 1)).ToList();
+                int moreKids = p.Children.Count - kids.Count;
+                if (moreKids > 0)
+                    kids.Add(new ProcChildVm($"+ {moreKids} more: " + string.Join(", ", p.Children.Skip(MaxChildRows).Take(4).Select(g => g.Name)), "", false));
+                return new ProcLineVm(text, sub, $"{cpu}{Fmt.Duration(now - p.Started)} · pid {p.Pid}", tip,
+                    p.Tag, p.Cpu is >= 5, kids);
             }).ToList();
             int more = _procs.Procs.Count - lines.Count;
-            if (more > 0) lines.Add(new ProcLineVm($"+ {more} more", "", "", "", "", false));
+            if (more > 0) lines.Add(new ProcLineVm($"+ {more} more", "", "", "", "", false, Array.Empty<ProcChildVm>()));
             return lines;
         }
     }
@@ -243,8 +253,15 @@ public sealed class TaskVm : Observable
     public void Tick() => RaiseAll();
 }
 
-public sealed record ProcLineVm(string Text, string Sub, string Meta, string Tip, string Tag, bool Busy)
+/// <summary>One kind of child program under a running program, e.g. "Unity Shader Compiler ×11   3%".</summary>
+public sealed record ProcChildVm(string Text, string Cpu, bool Busy)
 {
+    public Brush CpuBrush => Busy ? Palette.Ok : Palette.Neutral;
+}
+
+public sealed record ProcLineVm(string Text, string Sub, string Meta, string Tip, string Tag, bool Busy, IReadOnlyList<ProcChildVm> Children)
+{
+    public bool HasChildren => Children.Count > 0;
     public bool HasTip => Tip.Length > 0;
     public bool HasSub => Sub.Length > 0;
     public bool HasTag => Tag.Length > 0;

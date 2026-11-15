@@ -32,7 +32,11 @@ public static class DiagnosticDump
                 if (last.Processes.TryGetValue(t.Key, out var pd))
                 {
                     foreach (var l in pd.Procs)
-                        sb.AppendLine($"      proc pid={l.Pid} cpu={l.Cpu:0.0} tag={l.Tag} shell={l.IsShell} [{l.Chain}] {l.Name} {(l.Args.Length > 160 ? l.Args[..160] + "…" : l.Args)} | {l.Busy}");
+                    {
+                        sb.AppendLine($"      proc pid={l.Pid} cpu={l.Cpu:0.0} tag={l.Tag} shell={l.IsShell} [{l.Chain}] {l.Name} {(l.Args.Length > 160 ? l.Args[..160] + "…" : l.Args)} | {l.FriendlyName} | title={l.Title}");
+                        foreach (var g in l.Children)
+                            sb.AppendLine($"          └ {g.Name} x{g.Count} cpu={g.Cpu:0.0} title={g.Title}");
+                    }
                     if (pd.LastRan != null) sb.AppendLine($"      last ran: {pd.LastRan} ended {pd.LastEnded:HH:mm:ss}");
                 }
                 else

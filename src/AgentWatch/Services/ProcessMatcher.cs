@@ -146,7 +146,7 @@ public sealed class ProcessMatcher
                 st.LastGoneAt = now;
 
             if (shellIdle)
-                procs.Add(Describe(shell!, ShortExe(shell!.Exe)) with { IsShell = true, Busy = null });
+                procs.Add(Describe(shell!, ShortExe(shell!.Exe)) with { IsShell = true, Children = Array.Empty<ChildGroup>() });
             foreach (var d in detached ?? new())
                 procs.Add(Describe(d, "detached: started by this command, its launcher has exited", "DETACHED"));
             foreach (var r in rel ?? new())
@@ -207,27 +207,30 @@ public sealed class ProcessMatcher
     {
         var (name, args) = Split(p);
         return new RunningProcess(p.Pid, name, args, p.CommandLine ?? p.Exe, p.Created, chain,
-            ProcessTree.IsShell(p), p.SubtreeCpu(), BusySummary(p), tag);
+            ProcessTree.IsShell(p), p.SubtreeCpu(), tag, p.FriendlyName, BestTitle(p), ChildGroups(p));
     }
 
     private static string Line(RunningProcess p) => (p.Name + " " + p.Args).TrimEnd();
 
-    /// <summary>"busy: UnityShaderCompiler ×8 31%, Unity 5%": the busiest kinds of child process, by CPU.</summary>
-    private static string? BusySummary(ProcInfo p)
+    /// <summary>
+    /// Child programs (all levels) grouped by name and window title, busiest first, like Task Manager's expanded group.
+    /// </summary>
+    private static IReadOnlyList<ChildGroup> ChildGroups(ProcInfo p) => p.Descendants()
+        .Where(d => !ProcessTree.IsNoise(d))
+        .GroupBy(d => (name: d.FriendlyName, title: BestTitle(d)))
+        .Select(g => new ChildGroup(g.Key.name, g.Key.title, g.Count(),
+            g.Any(d => d.Cpu != null) ? g.Sum(d => d.Cpu ?? 0) : null))
+        .OrderByDescending(g => g.Cpu ?? 0).ThenBy(g => g.Title == null).ThenByDescending(g => g.Count).ThenBy(g => g.Name)
+        .ToList();
+
+    /// <summary>The most telling window title: a progress or dialog window rather than the main window.</summary>
+    private static string? BestTitle(ProcInfo p) => p.Titles.Count switch
     {
-        var groups = p.Descendants().Where(d => !ProcessTree.IsNoise(d))
-            .GroupBy(d => ShortExe(d.Exe), StringComparer.OrdinalIgnoreCase)
-            .Select(g => (name: g.Key, count: g.Count(), cpu: g.Sum(d => d.Cpu ?? 0)))
-            .ToList();
-        if (groups.Count == 0) return null;
-        static string Name((string name, int count, double cpu) g) => g.count > 1 ? $"{g.name} ×{g.count}" : g.name;
-        var busy = groups.Where(g => g.cpu >= 0.5).OrderByDescending(g => g.cpu).Take(3).ToList();
-        if (busy.Count > 0)
-            return "busy: " + string.Join(", ", busy.Select(g => $"{Name(g)} {g.cpu:0}%"));
-        int n = groups.Sum(g => g.count);
-        return $"{n} child process{(n == 1 ? "" : "es")}, all idle: " +
-               string.Join(", ", groups.OrderByDescending(g => g.count).Take(3).Select(Name));
-    }
+        0 => null,
+        1 => p.Titles[0],
+        // The main window's title is usually the longest ("project - scene - platform - version"); dialogs are short.
+        _ => string.Join("  |  ", p.Titles.OrderBy(t => t.Length).Take(2)),
+    };
 
     private static string ShortExe(string exe) =>
         exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? exe[..^4] : exe;

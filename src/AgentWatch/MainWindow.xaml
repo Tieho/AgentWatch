@@ -34,6 +34,19 @@
                 <TextBlock Text="{Binding Sub}" FontFamily="{StaticResource MonoFont}" FontSize="10" Foreground="{StaticResource SubTextBrush}"
                            Margin="14,0,0,0" TextTrimming="CharacterEllipsis"
                            Visibility="{Binding HasSub, Converter={StaticResource BoolVis}}"/>
+                <ItemsControl ItemsSource="{Binding Children}" Margin="14,1,0,0"
+                              Visibility="{Binding HasChildren, Converter={StaticResource BoolVis}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding Cpu}" FontFamily="{StaticResource MonoFont}" FontSize="10"
+                                           Foreground="{Binding CpuBrush}" Margin="10,0,0,0" MinWidth="28" TextAlignment="Right"/>
+                                <TextBlock Text="└ " FontFamily="{StaticResource MonoFont}" FontSize="10" Foreground="{StaticResource SubTextBrush}"/>
+                                <TextBlock Text="{Binding Text}" FontSize="11" Foreground="#B9C0C8" TextTrimming="CharacterEllipsis"/>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </StackPanel>
         </DataTemplate>
 

@@ -80,9 +80,12 @@ public sealed record SessionActivity(
     int TurnSteps,
     IReadOnlyList<ActivityStep> Steps);
 
-/// <summary>A process doing work under a task's shell (a leaf of its process tree).</summary>
+/// <summary>Child programs of one kind (same name and window title) under a running program.</summary>
+public sealed record ChildGroup(string Name, string? Title, int Count, double? Cpu);
+
+/// <summary>A program a task is running, with its window title and its child programs.</summary>
 public sealed record RunningProcess(int Pid, string Name, string Args, string CommandLine, DateTimeOffset Started, string Chain,
-    bool IsShell, double? Cpu, string? Busy, string Tag)
+    bool IsShell, double? Cpu, string Tag, string FriendlyName, string? Title, IReadOnlyList<ChildGroup> Children)
 {
     /// <summary>Not under the task's shell: DETACHED (its launcher exited) or RELATED (already running, used by the command).</summary>
     public bool Outside => Tag.Length > 0;
