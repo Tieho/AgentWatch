@@ -28,7 +28,7 @@
                             Visibility="{Binding HasTag, Converter={StaticResource BoolVis}}">
                         <TextBlock Text="{Binding Tag}" FontSize="8" FontWeight="Bold" Foreground="#C8CED6"/>
                     </Border>
-                    <TextBlock Text="{Binding Text}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="#D6DCE2"
+                    <TextBlock Text="{Binding Text}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{Binding TextBrush}"
                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                 </DockPanel>
                 <TextBlock Text="{Binding Sub}" FontFamily="{StaticResource MonoFont}" FontSize="10" Foreground="{StaticResource SubTextBrush}"

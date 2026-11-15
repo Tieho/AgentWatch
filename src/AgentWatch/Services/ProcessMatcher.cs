@@ -207,7 +207,7 @@ public sealed class ProcessMatcher
     {
         var (name, args) = Split(p);
         return new RunningProcess(p.Pid, name, args, p.CommandLine ?? p.Exe, p.Created, chain,
-            ProcessTree.IsShell(p), p.SubtreeCpu(), tag, p.FriendlyName, BestTitle(p), ChildGroups(p));
+            ProcessTree.IsShell(p), p.SubtreeCpu(), tag, p.FriendlyName, BestTitle(p), ChildGroups(p), p.NotResponding);
     }
 
     private static string Line(RunningProcess p) => (p.Name + " " + p.Args).TrimEnd();
@@ -217,10 +217,10 @@ public sealed class ProcessMatcher
     /// </summary>
     private static IReadOnlyList<ChildGroup> ChildGroups(ProcInfo p) => p.Descendants()
         .Where(d => !ProcessTree.IsNoise(d))
-        .GroupBy(d => (name: d.FriendlyName, title: BestTitle(d)))
+        .GroupBy(d => (name: d.FriendlyName, title: BestTitle(d), hung: d.NotResponding))
         .Select(g => new ChildGroup(g.Key.name, g.Key.title, g.Count(),
-            g.Any(d => d.Cpu != null) ? g.Sum(d => d.Cpu ?? 0) : null))
-        .OrderByDescending(g => g.Cpu ?? 0).ThenBy(g => g.Title == null).ThenByDescending(g => g.Count).ThenBy(g => g.Name)
+            g.Any(d => d.Cpu != null) ? g.Sum(d => d.Cpu ?? 0) : null, g.Key.hung))
+        .OrderByDescending(g => g.NotResponding).ThenByDescending(g => g.Cpu ?? 0).ThenBy(g => g.Title == null).ThenByDescending(g => g.Count).ThenBy(g => g.Name)
         .ToList();
 
     /// <summary>The most telling window title: a progress or dialog window rather than the main window.</summary>

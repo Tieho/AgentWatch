@@ -18,6 +18,8 @@ public sealed class ProcInfo(int pid, int parentPid, string exe, DateTimeOffset 
     public string FriendlyName { get; set; } = "";
     /// <summary>Titles of the process's visible top-level windows ("Opening project...", "Hold on...").</summary>
     public List<string> Titles { get; } = new();
+    /// <summary>One of its windows has stopped processing messages (Task Manager's "Not responding").</summary>
+    public bool NotResponding { get; set; }
     public List<ProcInfo> Children { get; } = new();
     public (int, long) Id => (Pid, Created.UtcTicks);
 
@@ -111,8 +113,12 @@ public static class ProcessTree
                     if (inTree.Contains(k.pid))
                     {
                         // Captured earlier as a separate root (extra roots come in any order): move it under its parent.
-                        if (keepRoots?.Contains(k.pid) != true && forest.Roots.Remove(k.pid, out var stolen) && stolen.Created >= created)
+                        // Check age before moving: a dead parent's pid may have been reused by a newer process.
+                        if (keepRoots?.Contains(k.pid) != true && forest.Roots.TryGetValue(k.pid, out var stolen) && stolen.Created >= created)
+                        {
+                            forest.Roots.Remove(k.pid);
                             p.Children.Add(stolen);
+                        }
                         continue;
                     }
                     // A stale parent pid can point at a newer process that reused the number.
@@ -141,8 +147,12 @@ public static class ProcessTree
             }
         }
 
-        foreach (var (pid, title) in WindowTitles())
-            if (forest.All.TryGetValue(pid, out var owner) && !owner.Titles.Contains(title)) owner.Titles.Add(title);
+        foreach (var (pid, title, hung) in WindowTitles())
+        {
+            if (!forest.All.TryGetValue(pid, out var owner)) continue;
+            if (hung) owner.NotResponding = true;
+            if (title.Length > 0 && !owner.Titles.Contains(title)) owner.Titles.Add(title);
+        }
 
         foreach (var k in CmdCache.Keys.Where(k => !live.Contains(k)).ToList()) CmdCache.Remove(k);
         foreach (var k in NameCache.Keys.Where(k => !live.Contains(k)).ToList()) NameCache.Remove(k);
@@ -181,20 +191,32 @@ public static class ProcessTree
         return string.IsNullOrWhiteSpace(desc) ? fallback : desc;
     }
 
-    /// <summary>(pid, title) of every visible, titled top-level window.</summary>
-    private static List<(int pid, string title)> WindowTitles()
+    /// <summary>
+    /// (pid, title, hung) of top-level windows that are visible or hung. A hung window is hidden behind a "ghost"
+    /// copy owned by dwm.exe, so hidden windows are checked too.
+    /// </summary>
+    private static List<(int pid, string title, bool hung)> WindowTitles()
     {
-        var list = new List<(int, string)>();
+        var list = new List<(int, string, bool)>();
         EnumWindowsProc cb = (h, _) =>
         {
-            if (!IsWindowVisible(h)) return true;
+            bool visible = IsWindowVisible(h);
+            bool hung = IsHungAppWindow(h);
+            if (!visible && !hung) return true;
+            // GetWindowText reads another process's caption without messaging it, so it is safe on hung windows.
             int len = GetWindowTextLengthW(h);
-            if (len <= 0) return true;
-            var sb = new System.Text.StringBuilder(len + 1);
-            GetWindowTextW(h, sb, sb.Capacity);
+            string t = "";
+            if (len > 0)
+            {
+                var sb = new System.Text.StringBuilder(len + 1);
+                GetWindowTextW(h, sb, sb.Capacity);
+                t = sb.ToString().Trim();
+            }
+            // Hidden helper windows (IME etc.) have no caption; only a real window's title is worth showing.
+            if (!visible && (GetWindowLongW(h, GWL_STYLE) & WS_CAPTION) != WS_CAPTION) t = "";
+            if (t.Length == 0 && !hung) return true;
             GetWindowThreadProcessId(h, out uint pid);
-            string t = sb.ToString().Trim();
-            if (t.Length > 0) list.Add(((int)pid, t));
+            list.Add(((int)pid, t, hung));
             return true;
         };
         EnumWindows(cb, IntPtr.Zero);
@@ -302,6 +324,12 @@ public static class ProcessTree
     private static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")]
+    private static extern bool IsHungAppWindow(IntPtr h);
+    private const int GWL_STYLE = -16;
+    private const int WS_CAPTION = 0x00C00000;
+    [DllImport("user32.dll")]
+    private static extern int GetWindowLongW(IntPtr h, int index);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowTextLengthW(IntPtr h);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]

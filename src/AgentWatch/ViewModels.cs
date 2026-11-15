@@ -219,6 +219,7 @@ public sealed class TaskVm : Observable
                 string text = p.IsShell ? $"{p.Name}  (no child process: builtin, sleep, loop or between steps)"
                     : p.Title != null ? $"{p.FriendlyName}  —  {p.Title}"
                     : (p.Name + " " + p.Args).TrimEnd();
+                if (p.NotResponding) text = "NOT RESPONDING  ·  " + text;
                 string sub = "";
                 if (p.IsShell && _procs.LastRan is { } last)
                     sub = "last ran: " + last + (_procs.LastEnded is { } e ? $"  ·  ended {Fmt.Duration(now - e)} ago" : "");
@@ -227,13 +228,14 @@ public sealed class TaskVm : Observable
                 string cpu = p.Cpu is { } c ? $"cpu {c:0}% · " : "";
                 string tip = $"{p.FriendlyName}\n{p.Chain}\npid {p.Pid}, started {p.Started.ToLocalTime():HH:mm:ss}\n\n{p.CommandLine}";
                 var kids = p.Children.Take(MaxChildRows).Select(g => new ProcChildVm(
-                    (g.Count > 1 ? $"{g.Name} ×{g.Count}" : g.Name) + (g.Title != null ? $"  —  {g.Title}" : ""),
+                    (g.Count > 1 ? $"{g.Name} ×{g.Count}" : g.Name) + (g.Title != null ? $"  —  {g.Title}" : "") +
+                    (g.NotResponding ? "  ·  NOT RESPONDING" : ""),
                     g.Cpu is { } gc ? $"{gc:0}%" : "", g.Cpu is >= 1)).ToList();
                 int moreKids = p.Children.Count - kids.Count;
                 if (moreKids > 0)
                     kids.Add(new ProcChildVm($"+ {moreKids} more: " + string.Join(", ", p.Children.Skip(MaxChildRows).Take(4).Select(g => g.Name)), "", false));
                 return new ProcLineVm(text, sub, $"{cpu}{Fmt.Duration(now - p.Started)} · pid {p.Pid}", tip,
-                    p.Tag, p.Cpu is >= 5, kids);
+                    p.Tag, p.Cpu is >= 5, kids, p.NotResponding);
             }).ToList();
             int more = _procs.Procs.Count - lines.Count;
             if (more > 0) lines.Add(new ProcLineVm($"+ {more} more", "", "", "", "", false, Array.Empty<ProcChildVm>()));
@@ -259,8 +261,12 @@ public sealed record ProcChildVm(string Text, string Cpu, bool Busy)
     public Brush CpuBrush => Busy ? Palette.Ok : Palette.Neutral;
 }
 
-public sealed record ProcLineVm(string Text, string Sub, string Meta, string Tip, string Tag, bool Busy, IReadOnlyList<ProcChildVm> Children)
+public sealed record ProcLineVm(string Text, string Sub, string Meta, string Tip, string Tag, bool Busy, IReadOnlyList<ProcChildVm> Children,
+    bool NotResponding = false)
 {
+    public Brush TextBrush => NotResponding ? Palette.Bad : TextDefault;
+    private static readonly Brush TextDefault = Freeze(new SolidColorBrush(Color.FromRgb(0xD6, 0xDC, 0xE2)));
+    private static Brush Freeze(SolidColorBrush b) { b.Freeze(); return b; }
     public bool HasChildren => Children.Count > 0;
     public bool HasTip => Tip.Length > 0;
     public bool HasSub => Sub.Length > 0;

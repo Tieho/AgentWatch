@@ -33,7 +33,7 @@ public static class DiagnosticDump
                 {
                     foreach (var l in pd.Procs)
                     {
-                        sb.AppendLine($"      proc pid={l.Pid} cpu={l.Cpu:0.0} tag={l.Tag} shell={l.IsShell} [{l.Chain}] {l.Name} {(l.Args.Length > 160 ? l.Args[..160] + "…" : l.Args)} | {l.FriendlyName} | title={l.Title}");
+                        sb.AppendLine($"      proc pid={l.Pid} cpu={l.Cpu:0.0} tag={l.Tag} shell={l.IsShell} [{l.Chain}] {l.Name} {(l.Args.Length > 160 ? l.Args[..160] + "…" : l.Args)} | {l.FriendlyName} | title={l.Title} hung={l.NotResponding}");
                         foreach (var g in l.Children)
                             sb.AppendLine($"          └ {g.Name} x{g.Count} cpu={g.Cpu:0.0} title={g.Title}");
                     }

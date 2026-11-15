@@ -81,11 +81,12 @@ public sealed record SessionActivity(
     IReadOnlyList<ActivityStep> Steps);
 
 /// <summary>Child programs of one kind (same name and window title) under a running program.</summary>
-public sealed record ChildGroup(string Name, string? Title, int Count, double? Cpu);
+public sealed record ChildGroup(string Name, string? Title, int Count, double? Cpu, bool NotResponding = false);
 
 /// <summary>A program a task is running, with its window title and its child programs.</summary>
 public sealed record RunningProcess(int Pid, string Name, string Args, string CommandLine, DateTimeOffset Started, string Chain,
-    bool IsShell, double? Cpu, string Tag, string FriendlyName, string? Title, IReadOnlyList<ChildGroup> Children)
+    bool IsShell, double? Cpu, string Tag, string FriendlyName, string? Title, IReadOnlyList<ChildGroup> Children,
+    bool NotResponding = false)
 {
     /// <summary>Not under the task's shell: DETACHED (its launcher exited) or RELATED (already running, used by the command).</summary>
     public bool Outside => Tag.Length > 0;
