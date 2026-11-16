@@ -150,13 +150,15 @@ public sealed class ProcessMatcher
         foreach (var r in named.Where(p => !agentSet.Contains(p) && forest.Roots.ContainsKey(p)).Select(p => forest.Roots[p]))
         {
             if (orphanIds.Contains(r.Id) || r.CommandLine is not { Length: > 0 } cl) continue;
-            foreach (var t in running)
-            {
-                if (t.Project.Length <= 3 || !NamesProgram(t.Command, r.Exe) || !InProject(cl, t.Project)) continue;
-                if (adopted.TryGetValue(t.Key, out var a) && a.Contains(r)) continue;
-                if (!related.TryGetValue(t.Key, out var list)) related[t.Key] = list = new();
-                list.Add(r);
-            }
+            if (adopted.Values.Any(a => a.Contains(r))) continue;
+            // Shown once: on the newest running command that runs it in its project.
+            var owner = running
+                .Where(t => t.Project.Length > 3 && NamesProgram(t.Command, r.Exe) && InProject(cl, t.Project))
+                .OrderByDescending(t => t.StartedAt)
+                .FirstOrDefault();
+            if (owner == null) continue;
+            if (!related.TryGetValue(owner.Key, out var list)) related[owner.Key] = list = new();
+            list.Add(r);
         }
 
         // ---- 4. describe ----
@@ -312,20 +314,93 @@ public sealed class ProcessMatcher
     private static bool IsShellName(string exe) => Path.GetFileNameWithoutExtension(exe).ToLowerInvariant() is
         "bash" or "sh" or "zsh" or "cmd" or "powershell" or "pwsh" or "conhost";
 
-    /// <summary>The command mentions the program as a whole word ("unity" for Unity.exe, not "community").</summary>
+    /// <summary>
+    /// The command runs the program: its name is the first word of one of the command's parts ("unity command …",
+    /// "x && /c/tools/unity.exe …", "s=$(unity …)"), not merely a file or package name in it ("Scenes/Town.unity").
+    /// </summary>
     private static bool NamesProgram(string command, string exe)
     {
         string name = Path.GetFileNameWithoutExtension(exe).ToLowerInvariant();
-        if (name.Length < 3 || command.Length == 0) return false;
-        string cmd = command.ToLowerInvariant();
-        for (int i = cmd.IndexOf(name, StringComparison.Ordinal); i >= 0; i = cmd.IndexOf(name, i + 1, StringComparison.Ordinal))
+        return name.Length >= 2 && CommandNames(command).Contains(name);
+    }
+
+    private static readonly Dictionary<string, HashSet<string>> CommandNamesCache = new();
+    /// <summary>A shell word: non-space characters and quoted strings (spaces kept), e.g. <c>x="a b"</c> is one word.</summary>
+    private static readonly System.Text.RegularExpressions.Regex Words =
+        new(@"(?:[^\s""']|""[^""]*""|'[^']*')+", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex Assignment =
+        new(@"^[A-Za-z_][A-Za-z0-9_]*=", System.Text.RegularExpressions.RegexOptions.Compiled);
+    /// <summary>Words that run the next word as the command.</summary>
+    private static readonly HashSet<string> Wrappers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "do", "then", "else", "elif", "if", "while", "until", "time", "exec", "nohup", "sudo", "env", "command",
+        "builtin", "xargs", "nice", "timeout", "start", "call", "!", "start-process", "invoke-expression", "iex",
+    };
+
+    /// <summary>
+    /// Splits a command line at ; &amp; | newlines ( ) { } and backticks outside quotes, and at <c>$(</c> anywhere except
+    /// in single quotes (a command substitution also runs inside double quotes).
+    /// </summary>
+    private static List<string> Parts(string command)
+    {
+        var parts = new List<string>();
+        var cur = new System.Text.StringBuilder();
+        char quote = '\0';
+        for (int i = 0; i < command.Length; i++)
         {
-            bool startOk = i == 0 || !char.IsLetterOrDigit(cmd[i - 1]);
-            int e = i + name.Length;
-            bool endOk = e == cmd.Length || !char.IsLetterOrDigit(cmd[e]);
-            if (startOk && endOk) return true;
+            char c = command[i];
+            if (quote != '\'' && c == '$' && i + 1 < command.Length && command[i + 1] == '(')
+            {
+                parts.Add(cur.ToString());
+                cur.Clear();
+                i++;
+                continue;
+            }
+            if (quote != '\0')
+            {
+                if (c == quote) quote = '\0';
+                cur.Append(c);
+                continue;
+            }
+            if (c is '"' or '\'') { quote = c; cur.Append(c); continue; }
+            if (c is ';' or '&' or '|' or '\r' or '\n' or '(' or ')' or '{' or '}' or '`')
+            {
+                parts.Add(cur.ToString());
+                cur.Clear();
+                continue;
+            }
+            cur.Append(c);
         }
-        return false;
+        parts.Add(cur.ToString());
+        return parts;
+    }
+
+    /// <summary>Program names (lower case, no path or extension) in command position anywhere in a command.</summary>
+    private static HashSet<string> CommandNames(string command)
+    {
+        if (CommandNamesCache.TryGetValue(command, out var cached)) return cached;
+        var names = new HashSet<string>();
+        foreach (var part in Parts(command))
+        {
+            var words = Words.Matches(part).Select(m => m.Value);
+            bool afterWrapper = false;
+            foreach (var raw in words)
+            {
+                string w = raw.Trim('"', '\'');
+                if (w.Length == 0 || Assignment.IsMatch(w)) continue;
+                if (Wrappers.Contains(w)) { afterWrapper = true; continue; }
+                // Options and numbers of a wrapper ("timeout 30 dotnet …", "nice -n 5 make").
+                if (afterWrapper && (w.StartsWith('-') || w.All(char.IsDigit))) continue;
+                string file = w.Replace('\\', '/');
+                file = file[(file.LastIndexOf('/') + 1)..].ToLowerInvariant();
+                foreach (var ext in new[] { ".exe", ".cmd", ".bat", ".ps1", ".sh" })
+                    if (file.EndsWith(ext)) { file = file[..^ext.Length]; break; }
+                if (file.Length > 0) names.Add(file);
+                break;
+            }
+        }
+        if (CommandNamesCache.Count > 2000) CommandNamesCache.Clear();
+        return CommandNamesCache[command] = names;
     }
 
     /// <summary>The shell's command line contains a recognizable piece of the task's command.</summary>
