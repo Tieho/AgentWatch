@@ -48,6 +48,20 @@ public sealed class MonitorService : IDisposable
             try { _claude.Poll(tasks, sessions); } catch (Exception e) { Error?.Invoke("Claude: " + e.Message); }
             try { _codex.Poll(tasks, sessions); } catch (Exception e) { Error?.Invoke("Codex: " + e.Message); }
 
+            // A command whose shell exited without a recorded result (turn stopped, agent gone quiet) is over.
+            foreach (var (key, gone, seen) in _procs.ShellsEnded(TimeSpan.FromSeconds(10)))
+            {
+                var rec = _claude.LiveTasks().Concat(_codex.LiveTasks()).FirstOrDefault(r => r.Key == key);
+                if (rec == null || rec.Status != AgentTaskStatus.Running) continue;
+                var end = gone;
+                // Not seen ending: the output file's last write is the best guess of when it did.
+                if (!seen && rec.OutputFile != null && File.Exists(rec.OutputFile))
+                    end = new DateTimeOffset(File.GetLastWriteTime(rec.OutputFile));
+                rec.FinishProvisionally(end, seen ? "shell exited, no result recorded" : "its shell is gone, no result recorded");
+                int i = tasks.FindIndex(t => t.Key == key);
+                if (i >= 0) tasks[i] = rec.ToSnapshot();
+            }
+
             // Attach running-task counts to sessions (a session can be "idle" while its background jobs run).
             for (int i = 0; i < sessions.Count; i++)
             {

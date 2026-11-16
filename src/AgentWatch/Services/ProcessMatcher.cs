@@ -13,12 +13,27 @@ public sealed class ProcessMatcher
     private sealed class TaskProcs
     {
         public (int pid, long created)? Shell;
+        /// <summary>When the matched shell was first missing (null while it runs).</summary>
+        public DateTimeOffset? ShellGoneAt;
+        /// <summary>No shell was ever found for it (it ended before it could be seen); ShellGoneAt is when that was noticed.</summary>
+        public bool NeverSeen;
         public readonly HashSet<(int, long)> Adopted = new();
         public string? LastText;
         public DateTimeOffset? LastGoneAt;
     }
 
     private readonly Dictionary<string, TaskProcs> _state = new();
+
+    /// <summary>
+    /// Running tasks whose shell (seen earlier) has been gone for at least <paramref name="grace"/>, with when it
+    /// went away. Processes the command detached don't count: they outlive it on purpose.
+    /// </summary>
+    public List<(string key, DateTimeOffset gone, bool seen)> ShellsEnded(TimeSpan grace)
+    {
+        var now = DateTimeOffset.Now;
+        return _state.Where(kv => kv.Value.ShellGoneAt is { } g && now - g >= grace)
+            .Select(kv => (kv.Key, kv.Value.ShellGoneAt!.Value, !kv.Value.NeverSeen)).ToList();
+    }
 
     public Dictionary<string, ProcessDetail> Match(IReadOnlyList<TaskSnapshot> tasks, IReadOnlyList<SessionSnapshot> sessions)
     {
@@ -54,34 +69,57 @@ public sealed class ProcessMatcher
                 ? ChildrenOf(codexRoots)
                 : claudeRoots.TryGetValue(group.Key, out int pid) ? ChildrenOf([pid]) : new();
 
-            // Keep earlier matches while that process lives; match new tasks oldest first.
+            bool Near(ProcInfo c, TaskSnapshot t) =>
+                // Transcript timestamps and process start differ a little; long-lived children (MCP servers) predate the task.
+                c.Created >= t.StartedAt.AddSeconds(-5) && (c.Created - t.StartedAt).TotalSeconds < 30;
+            bool Free(ProcInfo c) => !taken.Contains((c.Pid, c.Created.UtcTicks));
+
+            void Take(TaskSnapshot t, TaskProcs st, ProcInfo shell)
+            {
+                st.Shell = (shell.Pid, shell.Created.UtcTicks);
+                st.ShellGoneAt = null;
+                st.NeverSeen = false;
+                taken.Add((shell.Pid, shell.Created.UtcTicks));
+                shells[t.Key] = shell;
+            }
+
+            // Keep earlier matches while that process lives. Once matched, a task keeps its shell: when that exits,
+            // the command is over (no re-matching).
+            var unmatched = new List<TaskSnapshot>();
             foreach (var t in group.OrderBy(t => t.StartedAt))
             {
                 var st = State(t.Key);
-                ProcInfo? shell = null;
-                if (st.Shell is { } s)
+                if (st.Shell is not { } s) { unmatched.Add(t); continue; }
+                var shell = candidates.FirstOrDefault(c => c.Pid == s.pid && c.Created.UtcTicks == s.created);
+                if (shell == null) st.ShellGoneAt ??= DateTimeOffset.Now;
+                else { st.ShellGoneAt = null; shells[t.Key] = shell; }
+            }
+
+            // New tasks: first the shells whose command line contains the task's command, then the closest in time
+            // (commands started in the same second must not swap shells).
+            foreach (var t in unmatched)
+            {
+                var c = candidates.Where(c => Free(c) && c.Created >= t.StartedAt.AddSeconds(-5) && MentionsCommand(c, t.Command))
+                    .OrderBy(c => Math.Abs((c.Created - t.StartedAt).TotalSeconds)).FirstOrDefault();
+                if (c != null) Take(t, State(t.Key), c);
+            }
+            foreach (var t in unmatched.Where(t => !shells.ContainsKey(t.Key)))
+            {
+                var st = State(t.Key);
+                var c = candidates.Where(c => Free(c) && Near(c, t))
+                    .OrderBy(c => Math.Abs((c.Created - t.StartedAt).TotalSeconds)).FirstOrDefault();
+                if (c != null) { Take(t, st, c); continue; }
+
+                // The Claude process is alive but has no shell at all from when this command started (not even one
+                // matched to another task): it already exited, e.g. before AgentWatch was started.
+                if (group.Key != "codex" && claudeRoots.TryGetValue(group.Key, out int root) && forest.Roots.ContainsKey(root) &&
+                    DateTimeOffset.Now - t.StartedAt > TimeSpan.FromMinutes(1) &&
+                    !candidates.Any(c => Near(c, t) || MentionsCommand(c, t.Command)))
                 {
-                    shell = candidates.FirstOrDefault(c => c.Pid == s.pid && c.Created.UtcTicks == s.created);
-                    if (shell == null) { st.Shell = null; taken.Remove(s); }
+                    st.NeverSeen = true;
+                    st.ShellGoneAt ??= DateTimeOffset.Now;
                 }
-                if (shell == null)
-                {
-                    shell = candidates
-                        .Where(c => !taken.Contains((c.Pid, c.Created.UtcTicks)))
-                        // Transcript timestamps and process start differ a little; long-lived children (MCP servers) predate the task.
-                        .Where(c => c.Created >= t.StartedAt.AddSeconds(-5))
-                        .Select(c => (c, text: MentionsCommand(c, t.Command), dt: Math.Abs((c.Created - t.StartedAt).TotalSeconds)))
-                        .Where(x => x.text || x.dt < 30)
-                        .OrderByDescending(x => x.text).ThenBy(x => x.dt)
-                        .Select(x => x.c)
-                        .FirstOrDefault();
-                    if (shell != null)
-                    {
-                        st.Shell = (shell.Pid, shell.Created.UtcTicks);
-                        taken.Add((shell.Pid, shell.Created.UtcTicks));
-                    }
-                }
-                if (shell != null) shells[t.Key] = shell;
+                else if (st.NeverSeen) { st.NeverSeen = false; st.ShellGoneAt = null; }
             }
         }
 

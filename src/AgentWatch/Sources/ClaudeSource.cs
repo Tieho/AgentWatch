@@ -32,6 +32,10 @@ public sealed class ClaudeSource
 
     public string ProjectsDir => System.IO.Path.Combine(_root, "projects");
 
+    /// <summary>Task records of the sessions being watched.</summary>
+    public IEnumerable<TaskRecord> LiveTasks() =>
+        _sessions.Values.SelectMany(s => s.Transcripts.Values).SelectMany(t => t.Tasks);
+
     public void Poll(List<TaskSnapshot> tasks, List<SessionSnapshot> sessions)
     {
         var now = DateTimeOffset.Now;

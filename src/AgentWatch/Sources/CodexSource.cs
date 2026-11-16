@@ -15,6 +15,9 @@ public sealed partial class CodexSource
     private readonly string _root = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
     private readonly Dictionary<string, CodexRollout> _rollouts = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Task records of the rollouts being tailed.</summary>
+    public IEnumerable<TaskRecord> LiveTasks() => _rollouts.Values.SelectMany(r => r.Tasks);
+
     public string StateDb => System.IO.Path.Combine(_root, "state_5.sqlite");
     public string HistoryDb => System.IO.Path.Combine(_root, "thread_history_1.sqlite");
 

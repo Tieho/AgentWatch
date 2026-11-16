@@ -25,12 +25,25 @@ public sealed class TaskRecord
     /// <summary>Assistant message id (Claude) used to detect orphaned foreground calls.</summary>
     public string? MessageId { get; set; }
 
+    /// <summary>Ended only because its process went away; a result recorded later still replaces it.</summary>
+    public bool ProvisionalEnd { get; private set; }
+
     public void Finish(AgentTaskStatus status, DateTimeOffset at, string? detail = null)
     {
-        if (Status != AgentTaskStatus.Running) return;
+        if (Status != AgentTaskStatus.Running && !ProvisionalEnd) return;
+        if (ProvisionalEnd) StatusDetail = null;
+        ProvisionalEnd = false;
         Status = status;
         EndedAt = at < StartedAt ? StartedAt : at;
         if (detail != null) StatusDetail = detail;
+    }
+
+    /// <summary>The command's shell has exited but no result was recorded (e.g. the agent's turn was stopped).</summary>
+    public void FinishProvisionally(DateTimeOffset at, string detail)
+    {
+        if (Status != AgentTaskStatus.Running) return;
+        Finish(AgentTaskStatus.Lost, at, detail);
+        ProvisionalEnd = true;
     }
 
     public TaskSnapshot ToSnapshot() => new(Key, Source, SessionName, Project, Description, Command,
